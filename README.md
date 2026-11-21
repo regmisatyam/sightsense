@@ -216,7 +216,21 @@ ideas are rebuilt here natively, with Apple Maps and no extra keys or packages:
   Space freezes the picture, G hides the drawing. Nothing is encoded or sent while no laptop is watching.
 - **Record real walks:** Settings › Record walks. Copy a recording off the phone, then:
   - `python3 Tools/summarize_walk.py <folder>` gives alerts per minute and latency;
-  - the launch argument `-replay <folder>` (in the scheme, disabled by default) replays it through the whole app.
+  - the launch argument `-replay <folder>` (in the scheme, disabled by default) replays it through the whole app;
+  - `python3 Tools/review_walk.py <folder>` reviews it with Gemini and writes `<folder>/review/report.md`:
+    1. **Prepare** (on the Mac, Apple frameworks only): faces blurred, the walk turned into a video,
+       and frames picked around each announcement (`Tools/prepare_walk.swift`).
+    2. **Agentic video understanding** (Gemini 4 Hydrogen, `processing: agentic`) explores the
+       video's timeline and lists every hazard a guide should mention, with times.
+    3. **Gemini Managed Agent** (Antigravity, in a fresh Google-hosted sandbox) gets the logs, those
+       frames, the video findings and `summarize_walk.py`; runs the numbers; compares what the app
+       said with what was there; looks at the frames where they disagree; and writes the report:
+       missed hazards, needless announcements, late warnings, settings to change, code to tune,
+       and what to record next.
+    The uploaded video is deleted from Gemini and the sandbox deleted at the end (`--keep` keeps
+    the sandbox for follow-up questions). Tested end to end on a 12-second test walk with one
+    planted false alarm ("Person, left" in an empty hallway): the agent caught it, traced it to the
+    glass doors, and flagged both chair warnings as late. Managed Agents is a Gemini API preview.
 
 ## Known limits
 
