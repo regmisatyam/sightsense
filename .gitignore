@@ -1,0 +1,10 @@
+# Xcode
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+.DS_Store
+
+# Secrets: never commit. Keep Secrets.xcconfig at the repo root, outside SightSense/,
+# so it is never copied into the app bundle.
+Secrets.xcconfig

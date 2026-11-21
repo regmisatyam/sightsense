@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_sightsense._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>The laptop viewer (Settings › Testing) shows the camera and what SightSense sees on a laptop on your Wi-Fi.</string>
+	<key>GeminiAPIKey</key>
+	<string>$(GEMINI_API_KEY)</string>
+	<key>GeminiModelFast</key>
+	<string>$(GEMINI_MODEL_FAST)</string>
+	<key>GeminiModelSmart</key>
+	<string>$(GEMINI_MODEL_SMART)</string>
+	<key>GeminiModelDeep</key>
+	<string>$(GEMINI_MODEL_DEEP)</string>
+	<key>GeminiModelSpatial</key>
+	<string>$(GEMINI_MODEL_SPATIAL)</string>
+	<key>GeminiModelLive</key>
+	<string>$(GEMINI_MODEL_LIVE)</string>
+	<key>GeminiProxyHost</key>
+	<string>$(GEMINI_PROXY_HOST)</string>
+	<key>GeminiAppToken</key>
+	<string>$(GEMINI_APP_TOKEN)</string>
+</dict>
+</plist>

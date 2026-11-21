@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SightSense CCTV</title>
+<style>
+  :root {
+    --bg: #040705;
+    --panel: rgba(7, 15, 10, 0.94);
+    --rule: rgba(95, 138, 108, 0.28);
+    --text: #b9f3c9;
+    --dim: #5d8769;
+    --green: #46ff86;
+    --amber: #ffb21e;
+    --red: #ff4b4b;
+    --cyan: #4fd5ff;
+    --pink: #ff5ad1;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 12px/1.45 var(--mono); }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  /* Scanlines over everything, like a monitor. */
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.16) 2px 3px);
+  }
+  header {
+    display: flex; gap: 20px; align-items: center; padding: 8px 16px;
+    border-bottom: 1px solid var(--rule); letter-spacing: 0.1em; text-transform: uppercase; font-size: 11px;
+  }
+  .rec { color: var(--red); animation: blink 1.2s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  #link { margin-left: auto; color: var(--amber); }
+  #link.on { color: var(--green); }
+  .keys { color: var(--dim); }
+
+  main {
+    flex: 1; min-height: 0; display: grid; gap: 12px; padding: 12px;
+    /* The middle column is as wide as a 3:4 portrait camera frame that fills the height. */
+    grid-template-columns: minmax(260px, 1fr) min(calc((100vh - 110px) * 0.75), 52vw) minmax(260px, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .feed { grid-column: 2; grid-row: 1 / span 2; margin: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .frame { position: relative; width: 100%; }
+  canvas { width: 100%; height: auto; background: #000; display: block; }
+  figcaption { color: var(--dim); font-size: 10.5px; letter-spacing: 0.04em; }
+  figcaption b { font-weight: 600; }
+
+  .panel { position: relative; background: var(--panel); padding: 14px 16px; min-height: 0; display: flex; flex-direction: column; }
+  /* CCTV corner brackets on every panel and on the camera frame. */
+  .panel::before, .frame::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+    --c: var(--green); --l: 18px;
+    background:
+      linear-gradient(var(--c), var(--c)) left top / var(--l) 2px,
+      linear-gradient(var(--c), var(--c)) left top / 2px var(--l),
+      linear-gradient(var(--c), var(--c)) right top / var(--l) 2px,
+      linear-gradient(var(--c), var(--c)) right top / 2px var(--l),
+      linear-gradient(var(--c), var(--c)) left bottom / var(--l) 2px,
+      linear-gradient(var(--c), var(--c)) left bottom / 2px var(--l),
+      linear-gradient(var(--c), var(--c)) right bottom / var(--l) 2px,
+      linear-gradient(var(--c), var(--c)) right bottom / 2px var(--l);
+    background-repeat: no-repeat;
+  }
+  h2 { margin: 0 0 10px; font-size: 11px; letter-spacing: 0.14em; color: var(--green); font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  h2 small { color: var(--dim); font-weight: 400; letter-spacing: 0.06em; }
+  .scroll { overflow: auto; min-height: 0; flex: 1; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; border-bottom: 1px dashed var(--rule); }
+  .row > span:first-child { color: var(--dim); }
+  .chips { margin-bottom: 8px; }
+  .chip { display: inline-block; padding: 1px 6px; margin: 0 4px 4px 0; border: 1px solid var(--rule); color: var(--dim); }
+  .chip.on { color: #031208; background: var(--green); border-color: var(--green); }
+  .chip.warn { color: #170f00; background: var(--amber); border-color: var(--amber); }
+  .label { color: var(--dim); margin-top: 6px; }
+  .quote { color: #eafff0; white-space: pre-wrap; word-break: break-word; }
+  ul { list-style: none; margin: 4px 0 0; padding: 0; }
+  li { padding: 3px 0; border-bottom: 1px dashed var(--rule); word-break: break-word; }
+  time { color: var(--dim); margin-right: 8px; }
+  .urgent { color: var(--red); }
+  .ambient, .dim { color: var(--dim); }
+  .offline { color: var(--amber); }
+  .bad { color: var(--red); }
+
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    main { grid-template-columns: 1fr; grid-template-rows: auto; }
+    .feed { grid-column: 1; grid-row: auto; }
+    .panel { max-height: 340px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="rec">● REC</span>
+  <span id="clock">--:--:--</span>
+  <span>SightSense · CAM 01 · Chest</span>
+  <span class="keys">Space: freeze · G: grid</span>
+  <span id="link">No signal</span>
+</header>
+
+<main>
+  <section class="panel" style="grid-column: 1; grid-row: 1" aria-labelledby="h-agent">
+    <h2 id="h-agent">Agent · Gemini Live <small>hears · says · does</small></h2>
+    <div class="scroll">
+      <div class="chips" id="agent-chips"></div>
+      <div class="label">Heard</div><div class="quote" id="agent-heard">—</div>
+      <div class="label">Said</div><div class="quote" id="agent-said">—</div>
+      <div class="label">Tools</div><ul id="agent-tools"></ul>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column: 1; grid-row: 2" aria-labelledby="h-perception">
+    <h2 id="h-perception">Perception · on the phone <small>offline, every frame</small></h2>
+    <div class="scroll">
+      <div id="status"></div>
+      <div class="label">Objects (x right, z ahead, meters)</div><ul id="objects"></ul>
+      <div class="label">Faces (score / limit: at or under the limit = recognized)</div><ul id="faces"></ul>
+    </div>
+  </section>
+
+  <figure class="feed">
+    <div class="frame"><canvas id="screen" width="480" height="640" aria-label="Camera with measurements drawn on it"></canvas></div>
+    <figcaption>
+      <b style="color: var(--red)">■</b> close ·
+      <b style="color: var(--amber)">■</b> in path ·
+      <b style="color: var(--cyan)">■</b> seen ·
+      <b style="color: var(--pink)">■</b> face ·
+      rings 1·2·3·5 m ·
+      <b style="color: var(--green)">│</b> lane ±0.45 m
+    </figcaption>
+  </figure>
+
+  <section class="panel" style="grid-column: 3; grid-row: 1" aria-labelledby="h-events">
+    <h2 id="h-events">Events · what was said <small>newest first</small></h2>
+    <div class="scroll"><ul id="spoken"></ul></div>
+  </section>
+
+  <section class="panel" style="grid-column: 3; grid-row: 2" aria-labelledby="h-models">
+    <h2 id="h-models">Models · find & guidance <small>REST calls</small></h2>
+    <div class="scroll">
+      <div id="guidance"></div>
+      <div class="label">Requests</div><ul id="models"></ul>
+    </div>
+  </section>
+</main>
+
+<script>
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("screen");
+  const ctx = canvas.getContext("2d");
+  const css = getComputedStyle(document.documentElement);
+  const C = Object.fromEntries(["green", "amber", "red", "cyan", "pink", "dim", "mono"].map((k) => [k, css.getPropertyValue("--" + k).trim()]));
+  let lastMessageAt = 0, drawnTime = 0, frozen = false, showGrid = true;
+  let placed = [];  // labels already drawn on this frame, so new ones don't cover them
+
+  // ---- helpers ----
+  const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour12: false });
+  const fixed = (v, d = 1) => (v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(d));
+  const signed = (v) => (v >= 0 ? "+" : "") + v.toFixed(1);
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;  // never innerHTML: AI text is untrusted
+    return node;
+  }
+  function rows(container, pairs) {
+    container.replaceChildren(...pairs.map(([key, value, cls]) => {
+      const row = el("div", "row");
+      row.append(el("span", null, key), el("span", cls || null, value));
+      return row;
+    }));
+  }
+
+  // ---- stream ----
+  const source = new EventSource("/events");
+  source.onopen = () => setLink(true);
+  source.onerror = () => setLink(false);
+  source.onmessage = (event) => {
+    if (frozen) return;
+    let snap;
+    try { snap = JSON.parse(event.data); } catch { return; }
+    lastMessageAt = performance.now();
+    setLink(true);
+    renderPanels(snap);
+    if (!snap.frame) return;
+    const image = new Image();
+    image.onload = () => {
+      if (snap.time < drawnTime) return;  // an older frame finished decoding late
+      drawnTime = snap.time;
+      draw(image, snap);
+    };
+    image.src = "data:image/jpeg;base64," + snap.frame;
+  };
+  function setLink(on) {
+    $("link").textContent = on ? "Live" : "No signal";
+    $("link").classList.toggle("on", on);
+  }
+  addEventListener("keydown", (event) => {
+    if (event.code === "Space") { frozen = !frozen; $("link").textContent = frozen ? "Frozen" : "Live"; event.preventDefault(); }
+    if (event.key === "g" || event.key === "G") showGrid = !showGrid;
+  });
+
+  // ---- camera with measurements ----
+  function draw(image, s) {
+    if (canvas.width !== image.naturalWidth || canvas.height !== image.naturalHeight) {
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+    }
+    const W = canvas.width, H = canvas.height, u = W / 480;
+    const at = (p) => [p[0] * W, p[1] * H];
+    placed = [];
+    ctx.drawImage(image, 0, 0, W, H);
+    if (showGrid && s.grid) drawGrid(s.grid, at, u);
+    drawPath(s.path, at, u);
+    for (const object of s.objects) drawObject(object, W, H, u);
+    for (const face of s.faces || []) drawFace(face, W, H, u);
+    if (s.found) drawFound(s.found, at, u);
+    drawHud(s, W, H, u);
+  }
+
+  function polyline(points, at) {
+    if (points.length < 2) return;
+    ctx.beginPath();
+    points.forEach((p, i) => { const [x, y] = at(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke();
+  }
+
+  function drawGrid(g, at, u) {
+    ctx.save();
+    const y = g.horizon * canvas.height;
+    if (y > 0 && y < canvas.height) {
+      ctx.strokeStyle = C.amber; ctx.globalAlpha = 0.65; ctx.lineWidth = u; ctx.setLineDash([6 * u, 6 * u]);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      ctx.globalAlpha = 1; tag("HORIZON", 6 * u, y - 18 * u, C.amber, u);
+    }
+    ctx.setLineDash([]);
+    ctx.strokeStyle = C.cyan; ctx.lineWidth = 1.5 * u; ctx.globalAlpha = 0.8;
+    for (const ring of g.rings) {
+      polyline(ring.points, at);
+      if (ring.label) { const [x, ly] = at(ring.label); ctx.globalAlpha = 1; tag(ring.meters + " m", x + 4 * u, ly - 16 * u, C.cyan, u); ctx.globalAlpha = 0.8; }
+    }
+    ctx.strokeStyle = C.green; ctx.globalAlpha = 0.9;
+    for (const lane of g.lanes) {
+      ctx.lineWidth = (lane.x === 0 ? 1 : 2) * u;
+      ctx.setLineDash(lane.x === 0 ? [3 * u, 7 * u] : []);
+      polyline(lane.points, at);
+    }
+    ctx.restore();
+  }
+
+  function drawPath(p, at, u) {
+    if (!p) return;
+    if (p.obstacle && p.obstacle.at) {
+      const [x, y] = at(p.obstacle.at), r = 10 * u;
+      ctx.save(); ctx.strokeStyle = C.red; ctx.lineWidth = 3 * u;
+      ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke();
+      ctx.restore();
+      tag(`OBSTACLE ${fixed(p.obstacle.meters)}m  x ${signed(p.obstacle.x)} z ${fixed(p.obstacle.z)}`, x + r + 4 * u, y - 8 * u, C.red, u, true);
+    }
+    if (p.drop && p.drop.at) {
+      const [x, y] = at(p.drop.at), w = 40 * u;
+      ctx.save(); ctx.strokeStyle = C.amber; ctx.lineWidth = 3 * u;
+      for (let i = 0; i < 3; i++) {
+        const yy = y + i * 6 * u;
+        ctx.beginPath(); ctx.moveTo(x - w / 2, yy - 4 * u); ctx.lineTo(x, yy + 4 * u); ctx.lineTo(x + w / 2, yy - 4 * u); ctx.stroke();
+      }
+      ctx.restore();
+      tag(`DROP ${fixed(p.drop.meters)}m`, x + w / 2 + 4 * u, y - 8 * u, C.amber, u, true);
+    }
+  }
+
+  function drawObject(o, W, H, u) {
+    const [x, y, w, h] = [o.box[0] * W, o.box[1] * H, o.box[2] * W, o.box[3] * H];
+    const color = o.urgent ? C.red : o.inPath ? C.amber : C.cyan;
+    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 2 * u; ctx.strokeRect(x, y, w, h); ctx.restore();
+    const closing = o.closing != null && o.closing > 0.3 ? `  ▲${fixed(o.closing)}m/s` : "";
+    tag(`#${o.id} ${o.label.toUpperCase()} ${fixed(o.meters)}m${closing}`, x, y - 32 * u, color, u, true);
+    tag(`x ${signed(o.x)}  z ${fixed(o.z)}  ${Math.round(o.bearing)}°`, x, y - 16 * u, color, u);
+  }
+
+  function drawFace(f, W, H, u) {
+    const [x, y, w, h] = [f.box[0] * W, f.box[1] * H, f.box[2] * W, f.box[3] * H];
+    ctx.save();
+    ctx.strokeStyle = C.pink; ctx.lineWidth = (f.name ? 3 : 1.5) * u;
+    ctx.setLineDash(f.usable ? [] : [4 * u, 4 * u]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+    const score = f.distance != null ? ` ${fixed(f.distance, 2)}/${fixed(f.limit, 2)}` : f.usable ? "" : " (too far or turned)";
+    tag((f.name ? f.name.toUpperCase() : "FACE ?") + score, x, y + h + 2 * u, C.pink, u, Boolean(f.name));
+  }
+
+  function drawFound(f, at, u) {
+    const [x, y] = at(f.at), r = 16 * u;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.35, 1 - f.age / 12);
+    ctx.strokeStyle = C.green; ctx.lineWidth = 2 * u;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(x + dx * r * 0.5, y + dy * r * 0.5); ctx.lineTo(x + dx * r * 1.6, y + dy * r * 1.6); }
+    ctx.stroke();
+    ctx.restore();
+    const meters = f.meters != null ? ` ${fixed(f.meters)}m` : "";
+    tag(`TARGET ${f.label.toUpperCase()}${meters} ${Math.round(f.bearing)}°`, x + r * 1.8, y - 8 * u, C.green, u, true);
+  }
+
+  function drawHud(s, W, H, u) {
+    tag(`CAM 01 · CHEST · ${s.mode.toUpperCase()}`, 8 * u, 8 * u, C.green, u, true);
+    tag(clock(s.time), W - 8 * u, 8 * u, C.green, u, true, "right");
+    const pitch = s.grid ? `${Math.round(s.grid.pitch)}°` : "–";
+    const heading = s.status.heading != null ? `${Math.round(s.status.heading)}°` : "–";
+    tag(`PITCH ${pitch} · HEADING ${heading} · ${fixed(s.status.fps, 0)} FPS · ${s.status.walking ? "WALKING" : "STANDING"}`,
+        8 * u, H - 24 * u, C.green, u);
+    if (s.path && !s.path.clear) tag("HAZARD", W - 8 * u, H - 24 * u, C.red, u, true, "right");
+  }
+
+  /** A label with a dark backing, kept inside the frame and off other labels. `y` is its top edge. */
+  function tag(text, x, y, color, u, strong = false, align = "left") {
+    ctx.save();
+    ctx.font = `${strong ? 600 : 400} ${Math.round(11 * u)}px ${C.mono}`;
+    const pad = 4 * u, w = ctx.measureText(text).width + pad * 2, h = 15 * u;
+    if (align === "right") x -= w;
+    x = Math.max(0, Math.min(canvas.width - w, x));
+    y = Math.max(0, Math.min(canvas.height - h, y));
+    const covers = (top) => placed.some((r) => x < r.x + r.w && r.x < x + w && top < r.y + r.h && r.y < top + h);
+    // Nudge up, then down, a label's height at a time, until it's clear (or give up after a few tries).
+    for (const step of [-1, 1]) {
+      let top = y;
+      for (let i = 0; i < 6 && covers(top); i++) top += step * (h + u);
+      if (!covers(top) && top >= 0 && top + h <= canvas.height) { y = top; break; }
+    }
+    placed.push({ x, y, w, h });
+    ctx.fillStyle = "rgba(0, 0, 0, 0.72)"; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = color; ctx.textBaseline = "middle"; ctx.fillText(text, x + pad, y + h / 2);
+    ctx.restore();
+  }
+
+  // ---- "no signal" static, like a camera that's off ----
+  const noise = document.createElement("canvas");
+  noise.width = 120; noise.height = 160;
+  const noiseCtx = noise.getContext("2d");
+  let lastNoiseAt = 0;
+  function tick(now) {
+    if (now - lastMessageAt > 2500 && !frozen && now - lastNoiseAt > 66) {
+      lastNoiseAt = now;
+      setLink(false);
+      const pixels = noiseCtx.createImageData(noise.width, noise.height);
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const v = (Math.random() * 200) | 0;
+        pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = v;
+        pixels.data[i + 3] = 255;
+      }
+      noiseCtx.putImageData(pixels, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(noise, 0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = true;
+      const u = canvas.width / 480;
+      tag("NO SIGNAL", canvas.width / 2 + 40 * u, canvas.height / 2 - 10 * u, C.amber, u * 1.6, true, "right");
+      tag("Open SightSense on the phone; keep it on this Wi-Fi", 12 * u, canvas.height / 2 + 24 * u, C.green, u);
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---- the four corners ----
+  function renderPanels(s) {
+    $("clock").textContent = clock(s.time);
+    renderAgent(s.agent);
+    renderSpoken(s.spoken);
+    renderPerception(s);
+    renderModels(s);
+  }
+
+  function renderAgent(a) {
+    const chips = [
+      [a.state.toUpperCase(), true, a.state === "ready" ? "on" : "warn"],
+      ["LISTENING", a.listening, "on"],
+      ["SPEAKING", a.speaking, "on"],
+      ["WORKING", a.working, "warn"],
+      [a.live ? (a.muted ? "LIVE · MUTED" : "LIVE · MIC OPEN") : "PUSH TO TALK", a.live && !a.muted, "on"],
+    ];
+    $("agent-chips").replaceChildren(...chips.map(([text, on, kind]) => el("span", "chip" + (on ? " " + kind : ""), text)));
+    $("agent-heard").textContent = a.heard || "—";
+    $("agent-said").textContent = a.said || "—";
+    $("agent-tools").replaceChildren(...a.tools.slice().reverse().map((t) => {
+      const item = el("li");
+      item.append(el("time", null, clock(t.time)), el("b", null, `${t.name}(${t.args})`), el("div", "dim", "→ " + t.result));
+      return item;
+    }));
+  }
+
+  function renderSpoken(lines) {
+    $("spoken").replaceChildren(...lines.slice().reverse().map((line) => {
+      const item = el("li", line.priority);
+      const voice = line.voice === "not spoken" ? el("span", "offline", " [not spoken: AI offline]") : el("span", "dim", "");
+      item.append(el("time", null, clock(line.time)), el("span", "dim", line.priority.toUpperCase() + " "), el("span", null, line.text), voice);
+      return item;
+    }));
+  }
+
+  function renderPerception(s) {
+    const st = s.status;
+    rows($("status"), [
+      ["Camera", `${fixed(st.fps, 0)} fps`],
+      ["Detector", `${st.detector} · ${fixed(st.detectMs, 0)} ms`],
+      ["Depth", `${st.depth} · ${fixed(st.depthMs, 0)} ms`],
+      ["Alert pipeline", st.pipelineMs != null ? `${fixed(st.pipelineMs, 0)} ms` : "–"],
+      ["Moving", st.walking ? "walking" : "standing still"],
+      ["Path", s.path.clear ? "nothing near" : "hazard", s.path.clear ? null : "urgent"],
+      ["Noise held back", String(st.filtered)],
+      ["Beeps · announce", `${st.beeps} · ${st.level}`],
+      ["Phone temperature", st.thermal, st.thermal === "hot" || st.thermal === "critical" ? "bad" : null],
+    ]);
+    $("objects").replaceChildren(...(s.objects.length ? s.objects.map((o) => {
+      const cls = o.urgent ? "urgent" : o.inPath ? "offline" : null;
+      return el("li", cls, `#${o.id} ${o.label} · ${fixed(o.meters)} m · x ${signed(o.x)} z ${fixed(o.z)} · ${Math.round(o.bearing)}°`);
+    }) : [el("li", "dim", "none confirmed")]));
+    const faces = s.faces || [];
+    $("faces").replaceChildren(...(faces.length ? faces.map((f) => el("li", f.name ? null : "dim",
+      `${f.name || "not saved"}${f.distance != null ? ` · ${fixed(f.distance, 2)} / ${fixed(f.limit, 2)}` : f.usable ? "" : " · too far or turned"}`))
+      : [el("li", "dim", "none")]));
+  }
+
+  function renderModels(s) {
+    const pairs = [["Guiding to", s.guidance || "—"]];
+    if (s.found) pairs.push(["Last pointed at", `${s.found.label} · ${s.found.meters != null ? fixed(s.found.meters) + " m · " : ""}${Math.round(s.found.bearing)}° · ${fixed(s.found.age, 0)} s ago`]);
+    rows($("guidance"), pairs);
+    $("models").replaceChildren(...(s.models.length ? s.models.slice().reverse().map((m) => {
+      const item = el("li", m.status === 200 ? null : "bad");
+      item.append(el("time", null, clock(m.time)), el("b", null, m.role + " "), el("span", null, `${m.model} · ${m.ms} ms`),
+                  el("span", "dim", m.status === 200 ? "" : ` · ${m.status === 0 ? "no connection" : "HTTP " + m.status}`));
+      return item;
+    }) : [el("li", "dim", "none yet (the agent handles most questions itself)")]));
+  }
+</script>
+</body>
+</html>

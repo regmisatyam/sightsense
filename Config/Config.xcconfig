@@ -1,0 +1,21 @@
+// Build settings for the SightSense target (committed; no secrets here).
+//
+// Put your Gemini settings in Config/Secrets.xcconfig, which is gitignored:
+//     cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig
+// Without them the app still works; Describe falls back to on-device detections.
+
+GEMINI_API_KEY =
+
+// Which model does which job (see SightSense/Reasoning/GeminiModels.swift). Each has a fallback.
+GEMINI_MODEL_FAST = gemini-4-carbon
+GEMINI_MODEL_SMART = gemini-4-hydrogen
+GEMINI_MODEL_DEEP = gemini-4-neon
+GEMINI_MODEL_SPATIAL = gemini-robotics-er-2-preview
+GEMINI_MODEL_LIVE = gemini-3.8-live
+
+// Optional proxy (server/gemini-proxy.js) so the key never ships in the app.
+// Host only, no "https://" (xcconfig treats "//" as a comment).
+GEMINI_PROXY_HOST =
+GEMINI_APP_TOKEN =
+
+#include? "Secrets.xcconfig"
