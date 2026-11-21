@@ -65,9 +65,22 @@ Do this, using code where it helps:
 4. Write the report, in plain English, to review/report.md next to the walk directory (that is,
    <walk directory>/../review/report.md). Sections: Summary (3 sentences), Numbers
    (announcements per minute, latency), Missed hazards, Needless or wrong announcements,
-   Late warnings, Settings to change (concrete: announcement level, which object categories,
-   beeps, describe focus, face recognition strictness), and What to record next.
-Then reply with the report's Summary section only."""
+   Late warnings, Settings to change, Code to tune, and What to record next.
+Then reply with the report's Summary section only.
+
+The app's real settings (recommend only these, by these names, and only what each one controls):
+- Announcements: essential (only things in the path you'll reach in a few seconds), balanced
+  (also things just beside the path, and crowds), everything (anything nearby, once each).
+  Safety warnings are spoken at every level.
+- Announced categories: people, vehicles and bikes, furniture and obstacles, animals, signs and
+  traffic lights; and whether to announce unnamed obstacles found by depth.
+- Beeps: off, path (only for something in the path, only while walking), always.
+- Alerts: brief or full wording; distances in steps or meters; camera height (chest height).
+- Saved-people recognition: strict, balanced, relaxed. It only decides when a saved person is
+  named; it has nothing to do with detecting people as obstacles.
+Anything else (detector confidence, how many sightings confirm an object, depth calibration,
+warning distances and timing) is code, not a setting: put it under Code to tune, as specific
+as the evidence allows."""
 
 
 def load_key() -> str:
